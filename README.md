@@ -170,5 +170,3 @@ docker compose down --volumes
 Esse comando remove os volumes do projeto, incluindo logs e autenticação. Para
 gerar credenciais novas, remova também o `.env` antes de repetir a configuração.
 Alterar somente a senha no `.env` não troca a senha de um banco já existente.
-
-O [roteiro do vídeo](docs/roteiro_loom.md) reúne os pontos da demonstração.
