@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+.venv/
+.tools/
+.local/
+__pycache__/
+*.py[cod]
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+*.egg-info/
+simple_auth_manager_passwords*.json*
+.DS_Store
+Thumbs.db

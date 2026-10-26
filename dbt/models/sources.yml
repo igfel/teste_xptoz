@@ -1,0 +1,8 @@
+version: 2
+sources:
+  - name: raw
+    schema: public
+    description: Dados originais do script Python.
+    tables:
+      - name: users_info
+        description: Cadastros fictícios gerados com Faker pt_BR.

@@ -1,0 +1,8 @@
+version: 2
+models:
+  - name: stg_users_info
+    description: Cadastros padronizados, com os horários de processamento.
+  - name: int_users_info
+    description: Primeiro nome, último nome e domínio extraídos dos cadastros.
+  - name: mart_users_por_dominio
+    description: Total de cadastros por domínio de e-mail.
