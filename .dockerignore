@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+.tools
+.local
+.venv
+**/__pycache__
+dbt/target
+dbt/logs
+docs
+.vscode
+*.docx

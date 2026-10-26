@@ -1,0 +1,124 @@
+name: ${COMPOSE_PROJECT_NAME:-xptoz_case}
+
+x-airflow-common: &airflow-common
+  build: .
+  image: ${COMPOSE_PROJECT_NAME:-xptoz_case}-runtime:local
+  user: "${AIRFLOW_UID:-50000}:0"
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    AIRFLOW__CORE__PARALLELISM: "2"
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: America/Sao_Paulo
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?Execute scripts/setup_env.py}
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: ${AIRFLOW_ADMIN_USER:-admin}:admin
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/auth/passwords.json
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD: python /opt/project/scripts/airflow_db_uri.py
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:?Execute scripts/setup_env.py}
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_API_SECRET:?Execute scripts/setup_env.py}
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD:?Execute scripts/setup_env.py}
+    AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
+    AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?Execute scripts/setup_env.py}
+    PGHOST: postgres
+    PGPORT: "5432"
+    PGDATABASE: xptoz
+    PGUSER: xptoz
+    PGPASSWORD: ${XPTOZ_DB_PASSWORD:?Execute scripts/setup_env.py}
+    DBT_ENV_SECRET_DB_PASSWORD: ${XPTOZ_DB_PASSWORD:?Execute scripts/setup_env.py}
+    DBT_PROFILES_DIR: /opt/project/dbt
+    DBT_PROJECT_DIR: /opt/project/dbt
+    DBT_TARGET_PATH: /opt/airflow/artifacts/manual
+    DBT_LOG_PATH: /opt/airflow/logs/dbt/manual
+    DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+    PYTHONPATH: /opt/project
+    FAKER_SEED: ${FAKER_SEED:-42}
+    DATA_ROWS: ${DATA_ROWS:-1000}
+  volumes:
+    - airflow_logs:/opt/airflow/logs
+    - airflow_artifacts:/opt/airflow/artifacts
+    - airflow_auth:/opt/airflow/auth
+  depends_on:
+    postgres:
+      condition: service_healthy
+    airflow-init:
+      condition: service_completed_successfully
+
+services:
+  postgres:
+    image: postgres:17.11-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944a8ec2133ccaf80d27
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Execute scripts/setup_env.py}
+      POSTGRES_DB: postgres
+      XPTOZ_DB_PASSWORD: ${XPTOZ_DB_PASSWORD:?Execute scripts/setup_env.py}
+      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD:?Execute scripts/setup_env.py}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/01-databases.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    command:
+      - bash
+      - -c
+      - >-
+        python /opt/project/scripts/init_airflow_auth.py
+        && airflow db migrate
+        && /opt/pipeline-venv/bin/python /opt/project/scripts/generate_data.py
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  airflow-api-server:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "127.0.0.1:${AIRFLOW_PORT:-8080}:8080"
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://localhost:8080/api/v2/monitor/health]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://localhost:8974/health]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    healthcheck:
+      test: [CMD-SHELL, 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 20s
+      timeout: 15s
+      retries: 15
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  airflow_logs:
+  airflow_artifacts:
+  airflow_auth:
